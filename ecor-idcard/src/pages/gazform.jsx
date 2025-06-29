@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { supabase } from '../supabaseClient';
+
 
 export default function FormGAZApplication() {
   const [formData, setFormData] = useState({
@@ -6,14 +8,7 @@ export default function FormGAZApplication() {
     employeeNo: '',
     designation: '',
     dob: '',
-    department: '',
     station: '',
-    billUnit: '',
-    address: '',
-    railwayContact: '',
-    mobile: '',
-    reason: '',
-    emergencyName: '',
     emergencyNumber: '',
     photo: null,
     signature: null,
@@ -42,34 +37,79 @@ export default function FormGAZApplication() {
   const handleSubmit = async (e) => {
     e.preventDefault();
   
-    const formPayload = new FormData();
+    const {
+      photo,
+      signature,
+      emergencyNumber,
+      ...rest
+    } = formData;
   
-    // Append all form fields
-    for (const key in formData) {
-      formPayload.append(key, formData[key]);
-    }
+    const applicationId = crypto.randomUUID();
   
-    // Append family list as JSON string
-    formPayload.append('familyList', JSON.stringify(familyList));
-  
-    try {
-      const res = await fetch('http://localhost:5173/backend/submit_gazetted.php', {
-        method: 'POST',
-        body: formPayload,
+    // 📤 Upload Photo
+    const photoPath = `photos/${rest.employeeNo}_photo.${photo.name.split('.').pop()}`;
+    const { data: photoData, error: photoError } = await supabase.storage
+      .from('gazetted-assets')
+      .upload(photoPath, photo, {
+        cacheControl: '3600',
+        upsert: true,
       });
   
-      const data = await res.json();
-  
-      if (res.ok) {
-        alert(`✅ Form submitted successfully!\nYour Application No: ${data.applicationNo}`);
-      } else {
-        alert(`❌ Error: ${data.message || 'Submission failed'}`);
-      }
-    } catch (err) {
-      console.error(err);
-      alert('❌ Error submitting form. Check console for more details.');
+    if (photoError) {
+      console.error('Photo upload error:', photoError);
+      alert('❌ Photo upload failed.');
+      return;
     }
+  
+    // 📤 Upload Signature
+    const signaturePath = `signatures/${rest.employeeNo}_sign.${signature.name.split('.').pop()}`;
+    const { data: signData, error: signError } = await supabase.storage
+      .from('gazetted-assets')
+      .upload(signaturePath, signature, {
+        cacheControl: '3600',
+        upsert: true,
+      });
+  
+    if (signError) {
+      console.error('Signature upload error:', signError);
+      alert('❌ Signature upload failed.');
+      return;
+    }
+  
+    // ✅ Insert into gazetted_forms
+    const { data: formInsert, error: formInsertError } = await supabase
+      .from('gazetted_forms')
+      .insert([
+        {
+          id: applicationId,
+          ...rest,
+          emergency_number: emergencyNumber, // 🔥 Use proper column name
+          photo_url: photoData.path,
+          signature_url: signData.path,
+        },
+      ])
+      .select()
+      .single();
+  
+    if (formInsertError) {
+      console.error('Form insertion error:', formInsertError);
+      alert('❌ Failed to save form data.');
+      return;
+    }
+  
+    // ✅ Insert family members
+    for (let member of familyList) {
+      await supabase.from('gazetted_family').insert([
+        {
+          form_id: applicationId,
+          ...member,
+        },
+      ]);
+    }
+  
+    alert(`✅ Form submitted successfully!\nYour Application No: ${formInsert.id}`);
   };
+  
   
   
 
@@ -80,7 +120,7 @@ export default function FormGAZApplication() {
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Employee Details */}
+        {/* Basic Info */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="text-sm text-black font-bold">Employee Name</label>
@@ -99,27 +139,6 @@ export default function FormGAZApplication() {
             <input type="date" name="dob" value={formData.dob} onChange={handleChange} className="w-full border p-2 rounded" required />
           </div>
           <div>
-            <label className="text-sm text-black font-bold">Department</label>
-            <select name="department" value={formData.Department} onChange={handleChange} className="w-full border p-2 rounded" required>
-              <option value="">Select Department</option>
-                    <option value="ACCOUNTS">ACCOUNTS</option>
-                    <option value="COMMERCIAL">COMMERCIAL</option>
-                    <option value="ELECTRICAL">ELECTRICAL</option>
-                    <option value="ENGINEERING">ENGINEERING</option>
-                    <option value="GA">GA</option>
-                    <option value="MECHANICAL">MECHANICAL</option>
-                    <option value="MEDICAL">MEDICAL</option>
-                    <option value="OPERATING">OPERATING</option>
-                    <option value="PERSONNEL">PERSONNEL</option>
-                    <option value="RRB">RRB</option>
-                    <option value="S&T">S&T</option>
-                    <option value="SAFETY">SAFETY</option>
-                    <option value="SECURITY">SECURITY</option>
-                    <option value="STORES">STORES</option>
- 
-            </select>
-          </div>
-          <div>
             <label className="text-sm text-black font-bold">Station</label>
             <select name="station" value={formData.station} onChange={handleChange} className="w-full border p-2 rounded" required>
               <option value="">Select Station</option>
@@ -127,50 +146,6 @@ export default function FormGAZApplication() {
               <option value="Cuttack">Cuttack</option>
               <option value="Sambalpur">Sambalpur</option>
             </select>
-          </div>
-          <div>
-            <label className="text-sm text-black font-bold">BillUnit</label>
-            <select name="billUnit" value={formData.BillUnit} onChange={handleChange} className="w-full border p-2 rounded" required>
-              <option value="">Select BillUnit</option>
-                    <option value="3101001">3101001</option>
-                    <option value="3101002">3101002</option>
-                    <option value="3101003">3101003</option>
-                    <option value="3101004">3101004</option>
-                    <option value="3101010">3101010</option>
-                    <option value="3101023">3101023</option>
-                    <option value="3101024">3101024</option>
-                    <option value="3101025">3101025</option>
-                    <option value="3101026">3101026</option>
-                    <option value="3101027">3101027</option>
-                    <option value="3101065">3101065</option>
-                    <option value="3101066">3101066</option>
-                    <option value="3101165">3101165</option>
-                    <option value="3101166">3101166</option>
-                    <option value="3101285">3101285</option>
-                    <option value="3101286">3101286</option>
-                    <option value="3101287">3101287</option>
-                    <option value="3101288">3101288</option>
-                    <option value="3101470">3101470</option>
-                    
-                    
- 
-            </select>
-          </div>
-          <div>
-            <label className="text-sm text-black font-bold">Residential Address</label>
-            <textarea name="address" value={formData.address} onChange={handleChange} className="w-full border p-2 rounded" required />
-          </div>
-          <div>
-            <label className="text-sm text-black font-bold">Rly Contact Number</label>
-            <input name="railwayContact" value={formData.railwayContact} onChange={handleChange} className="w-full border p-2 rounded" />
-          </div>
-          <div>
-            <label className="text-sm text-black font-bold">Mobile Number</label>
-            <input name="mobile" value={formData.mobile} onChange={handleChange} className="w-full border p-2 rounded" required />
-          </div>
-          <div>
-            <label className="text-sm text-black font-bold">Reason for Application</label>
-            <input name="reason" value={formData.reason} onChange={handleChange} className="w-full border p-2 rounded" required />
           </div>
         </div>
 
@@ -201,30 +176,24 @@ export default function FormGAZApplication() {
 
         {/* Emergency & Uploads */}
         <div className="bg-blue-100 p-4 rounded space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm text-black font-bold">Emergency Contact Name</label>
-              <input name="emergencyName" value={formData.emergencyName} onChange={handleChange} className="w-full border p-2 rounded" required />
-            </div>
-            <div>
-              <label className="text-sm text-black font-bold">Emergency Contact Number</label>
-              <input name="emergencyNumber" value={formData.emergencyNumber} onChange={handleChange} className="w-full border p-2 rounded" required />
-            </div>
+          <div>
+            <label className="text-sm text-black font-bold">Emergency Contact Number</label>
+            <input name="emergencyNumber" value={formData.emergencyNumber} onChange={handleChange} className="w-full border p-2 rounded" required />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm text-black font-bold">Upload Photo</label>
-              <input type="file" name="photo" onChange={handleChange} accept="image/*" className="w-full border p-2 rounded" required />
+              <label className="text-sm text-black font-bold">Upload Photo (.jpg/.png only)</label>
+              <input type="file" name="photo" onChange={handleChange} accept=".jpg,.jpeg,.png" className="w-full border p-2 rounded" required />
             </div>
             <div>
-              <label className="text-sm text-black font-bold">Upload Signature</label>
-              <input type="file" name="signature" onChange={handleChange} accept="image/*" className="w-full border p-2 rounded" required />
+              <label className="text-sm text-black font-bold">Upload Signature (.jpg/.png only)</label>
+              <input type="file" name="signature" onChange={handleChange} accept=".jpg,.jpeg,.png" className="w-full border p-2 rounded" required />
             </div>
           </div>
 
           <p className="text-xs text-red-500">
-            NOTE: File name should be in format <i>Firstname_photo</i> and <i>Firstname_sign</i> (jpg/jpeg/png). Avoid mobile scans or selfies.
+            NOTE: File name should be in format <i>Firstname_photo</i> and <i>Firstname_sign</i>. Only .jpg, .jpeg, .png allowed.
           </p>
         </div>
 
